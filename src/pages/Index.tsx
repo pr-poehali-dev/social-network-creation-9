@@ -1,9 +1,12 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
+import { useAuth } from '@/contexts/AuthContext';
+import { useToast } from '@/hooks/use-toast';
 import Icon from '@/components/ui/icon';
 
 interface Post {
@@ -30,67 +33,37 @@ interface Comment {
 }
 
 const Index = () => {
+  const navigate = useNavigate();
+  const { user, isAuthenticated, logout } = useAuth();
+  const { toast } = useToast();
   const [activeTab, setActiveTab] = useState('feed');
   const [newPost, setNewPost] = useState('');
-  const [posts, setPosts] = useState<Post[]>([
-    {
-      id: 1,
-      author: {
-        name: 'Анна Иванова',
-        avatar: '/placeholder.svg',
-        username: '@anna_iv',
-      },
-      content: 'Какой прекрасный день! Открыла для себя новое кафе в центре города ☕✨',
-      likes: 42,
-      comments: 8,
-      shares: 3,
-      isLiked: false,
-      timestamp: '2 часа назад',
-    },
-    {
-      id: 2,
-      author: {
-        name: 'Дмитрий Петров',
-        avatar: '/placeholder.svg',
-        username: '@dmitry_p',
-      },
-      content: 'Завершил новый проект! Работал над ним целый месяц, но результат того стоит 🚀',
-      image: '/placeholder.svg',
-      likes: 128,
-      comments: 24,
-      shares: 15,
-      isLiked: true,
-      timestamp: '5 часов назад',
-    },
-    {
-      id: 3,
-      author: {
-        name: 'Елена Смирнова',
-        avatar: '/placeholder.svg',
-        username: '@elena_s',
-      },
-      content: 'Делюсь своими любимыми книгами этого месяца! Что вы читаете сейчас? 📚',
-      likes: 67,
-      comments: 15,
-      shares: 7,
-      isLiked: false,
-      timestamp: '1 день назад',
-    },
-  ]);
-
+  const [posts, setPosts] = useState<Post[]>([]);
   const [expandedComments, setExpandedComments] = useState<{ [key: number]: boolean }>({});
   const [commentTexts, setCommentTexts] = useState<{ [key: number]: string }>({});
-  const [postComments, setPostComments] = useState<{ [key: number]: Comment[] }>({
-    1: [
-      { id: 1, author: 'Иван', avatar: '/placeholder.svg', text: 'Выглядит отлично!' },
-      { id: 2, author: 'Мария', avatar: '/placeholder.svg', text: 'Надо будет заглянуть!' },
-    ],
-    2: [
-      { id: 1, author: 'Алексей', avatar: '/placeholder.svg', text: 'Поздравляю! 🎉' },
-    ],
-  });
+  const [postComments, setPostComments] = useState<{ [key: number]: Comment[] }>({});
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      navigate('/login');
+    }
+  }, [isAuthenticated, navigate]);
+
+  const requireAuth = (action: string) => {
+    if (!isAuthenticated) {
+      toast({
+        title: "Требуется авторизация",
+        description: `Войдите, чтобы ${action}`,
+        variant: "destructive",
+      });
+      return false;
+    }
+    return true;
+  };
 
   const handleLike = (postId: number) => {
+    if (!requireAuth("ставить лайки")) return;
+    
     setPosts(
       posts.map((post) =>
         post.id === postId
@@ -105,13 +78,15 @@ const Index = () => {
   };
 
   const addComment = (postId: number) => {
+    if (!requireAuth("комментировать")) return;
+    
     const text = commentTexts[postId];
     if (!text?.trim()) return;
 
     const newComment: Comment = {
       id: Date.now(),
-      author: 'Вы',
-      avatar: '/placeholder.svg',
+      author: user?.name || 'Вы',
+      avatar: user?.avatar || '/placeholder.svg',
       text: text,
     };
 
@@ -128,18 +103,25 @@ const Index = () => {
   };
 
   const handleShare = (postId: number) => {
+    if (!requireAuth("делиться постами")) return;
+    
     setPosts(posts.map((post) => (post.id === postId ? { ...post, shares: post.shares + 1 } : post)));
+    toast({
+      title: "Пост опубликован!",
+      description: "Пост появился в вашей ленте",
+    });
   };
 
   const createPost = () => {
+    if (!requireAuth("создавать посты")) return;
     if (!newPost.trim()) return;
 
     const post: Post = {
       id: Date.now(),
       author: {
-        name: 'Вы',
-        avatar: '/placeholder.svg',
-        username: '@you',
+        name: user?.name || 'Вы',
+        avatar: user?.avatar || '/placeholder.svg',
+        username: user?.username || '@you',
       },
       content: newPost,
       likes: 0,
@@ -151,6 +133,15 @@ const Index = () => {
 
     setPosts([post, ...posts]);
     setNewPost('');
+    toast({
+      title: "Пост создан!",
+      description: "Ваш пост появился в ленте",
+    });
+  };
+
+  const handleLogout = () => {
+    logout();
+    navigate('/login');
   };
 
   const navItems = [
@@ -160,6 +151,10 @@ const Index = () => {
     { id: 'messages', label: 'Сообщения', icon: 'MessageCircle' },
     { id: 'search', label: 'Поиск', icon: 'Search' },
   ];
+
+  if (!isAuthenticated) {
+    return null;
+  }
 
   return (
     <div className="min-h-screen bg-background">
@@ -195,12 +190,15 @@ const Index = () => {
               <Button variant="ghost" size="icon" className="relative">
                 <Icon name="Bell" size={20} />
                 <Badge className="absolute -top-1 -right-1 h-5 w-5 flex items-center justify-center p-0 gradient-orange text-white">
-                  3
+                  0
                 </Badge>
               </Button>
-              <Avatar className="h-9 w-9 ring-2 ring-primary">
-                <AvatarImage src="/placeholder.svg" />
-                <AvatarFallback>Я</AvatarFallback>
+              <Button variant="ghost" size="icon" onClick={handleLogout}>
+                <Icon name="LogOut" size={20} />
+              </Button>
+              <Avatar className="h-9 w-9 ring-2 ring-primary cursor-pointer" onClick={() => setActiveTab('profile')}>
+                <AvatarImage src={user?.avatar} />
+                <AvatarFallback>{user?.name?.[0] || 'Я'}</AvatarFallback>
               </Avatar>
             </div>
           </div>
@@ -214,8 +212,8 @@ const Index = () => {
               <CardContent className="pt-6">
                 <div className="flex space-x-4">
                   <Avatar>
-                    <AvatarImage src="/placeholder.svg" />
-                    <AvatarFallback>Я</AvatarFallback>
+                    <AvatarImage src={user?.avatar} />
+                    <AvatarFallback>{user?.name?.[0] || 'Я'}</AvatarFallback>
                   </Avatar>
                   <div className="flex-1 space-y-3">
                     <Textarea
@@ -243,6 +241,16 @@ const Index = () => {
                 </div>
               </CardContent>
             </Card>
+
+            {posts.length === 0 && (
+              <Card className="animate-fade-in">
+                <CardContent className="py-12 text-center">
+                  <div className="text-6xl mb-4">📝</div>
+                  <h3 className="text-xl font-semibold mb-2">Лента пуста</h3>
+                  <p className="text-muted-foreground">Создайте первый пост или добавьте друзей!</p>
+                </CardContent>
+              </Card>
+            )}
 
             {posts.map((post, index) => (
               <Card
@@ -292,7 +300,7 @@ const Index = () => {
                       className={`${post.isLiked ? 'text-red-500' : ''} hover:text-red-500 transition-colors`}
                       onClick={() => handleLike(post.id)}
                     >
-                      <Icon name={post.isLiked ? 'Heart' : 'Heart'} size={18} className="mr-2" fill={post.isLiked ? 'currentColor' : 'none'} />
+                      <Icon name="Heart" size={18} className="mr-2" fill={post.isLiked ? 'currentColor' : 'none'} />
                       {post.likes}
                     </Button>
 
@@ -334,8 +342,8 @@ const Index = () => {
 
                       <div className="flex space-x-3 pt-2">
                         <Avatar className="h-8 w-8">
-                          <AvatarImage src="/placeholder.svg" />
-                          <AvatarFallback>Я</AvatarFallback>
+                          <AvatarImage src={user?.avatar} />
+                          <AvatarFallback>{user?.name?.[0] || 'Я'}</AvatarFallback>
                         </Avatar>
                         <div className="flex-1 flex space-x-2">
                           <Textarea
@@ -364,32 +372,40 @@ const Index = () => {
             <CardHeader>
               <div className="flex flex-col items-center space-y-4">
                 <Avatar className="h-24 w-24 ring-4 ring-primary">
-                  <AvatarImage src="/placeholder.svg" />
-                  <AvatarFallback>Я</AvatarFallback>
+                  <AvatarImage src={user?.avatar} />
+                  <AvatarFallback>{user?.name?.[0] || 'Я'}</AvatarFallback>
                 </Avatar>
                 <div className="text-center">
-                  <h2 className="text-2xl font-bold">Ваш Профиль</h2>
-                  <p className="text-muted-foreground">@your_username</p>
+                  <h2 className="text-2xl font-bold">{user?.name}</h2>
+                  <p className="text-muted-foreground">{user?.username}</p>
+                  <p className="text-sm text-muted-foreground mt-1">{user?.email}</p>
                 </div>
                 <div className="flex space-x-6">
                   <div className="text-center">
-                    <p className="text-2xl font-bold gradient-purple bg-clip-text text-transparent">128</p>
+                    <p className="text-2xl font-bold gradient-purple bg-clip-text text-transparent">{posts.length}</p>
                     <p className="text-sm text-muted-foreground">Постов</p>
                   </div>
                   <div className="text-center">
-                    <p className="text-2xl font-bold gradient-blue bg-clip-text text-transparent">1.2K</p>
+                    <p className="text-2xl font-bold gradient-blue bg-clip-text text-transparent">0</p>
                     <p className="text-sm text-muted-foreground">Друзей</p>
                   </div>
                   <div className="text-center">
-                    <p className="text-2xl font-bold gradient-orange bg-clip-text text-transparent">3.4K</p>
+                    <p className="text-2xl font-bold gradient-orange bg-clip-text text-transparent">
+                      {posts.reduce((sum, post) => sum + post.likes, 0)}
+                    </p>
                     <p className="text-sm text-muted-foreground">Лайков</p>
                   </div>
                 </div>
               </div>
             </CardHeader>
             <CardContent className="space-y-4">
-              <Button className="w-full gradient-purple">Редактировать профиль</Button>
-              <Button variant="outline" className="w-full">Настройки</Button>
+              <Button className="w-full gradient-purple" onClick={() => navigate('/edit-profile')}>
+                Редактировать профиль
+              </Button>
+              <Button variant="outline" className="w-full" onClick={handleLogout}>
+                <Icon name="LogOut" size={16} className="mr-2" />
+                Выйти
+              </Button>
             </CardContent>
           </Card>
         )}
@@ -397,23 +413,17 @@ const Index = () => {
         {activeTab === 'friends' && (
           <div className="space-y-4 animate-fade-in">
             <h2 className="text-2xl font-bold">Друзья</h2>
-            {[1, 2, 3, 4].map((i) => (
-              <Card key={i}>
-                <CardContent className="flex items-center justify-between p-4">
-                  <div className="flex items-center space-x-4">
-                    <Avatar className="h-12 w-12">
-                      <AvatarImage src="/placeholder.svg" />
-                      <AvatarFallback>Д{i}</AvatarFallback>
-                    </Avatar>
-                    <div>
-                      <p className="font-semibold">Друг {i}</p>
-                      <p className="text-sm text-muted-foreground">@friend{i}</p>
-                    </div>
-                  </div>
-                  <Button variant="outline" size="sm">Сообщение</Button>
-                </CardContent>
-              </Card>
-            ))}
+            <Card>
+              <CardContent className="py-12 text-center">
+                <div className="text-6xl mb-4">👥</div>
+                <h3 className="text-xl font-semibold mb-2">Список друзей пуст</h3>
+                <p className="text-muted-foreground mb-4">Начните добавлять друзей!</p>
+                <Button className="gradient-blue" onClick={() => setActiveTab('search')}>
+                  <Icon name="Search" size={16} className="mr-2" />
+                  Найти друзей
+                </Button>
+              </CardContent>
+            </Card>
           </div>
         )}
 
@@ -422,20 +432,10 @@ const Index = () => {
             <CardHeader>
               <h2 className="text-2xl font-bold">Сообщения</h2>
             </CardHeader>
-            <CardContent className="space-y-4">
-              {[1, 2, 3].map((i) => (
-                <div key={i} className="flex items-center space-x-4 p-3 rounded-lg hover:bg-muted cursor-pointer transition-colors">
-                  <Avatar>
-                    <AvatarImage src="/placeholder.svg" />
-                    <AvatarFallback>Ч{i}</AvatarFallback>
-                  </Avatar>
-                  <div className="flex-1">
-                    <p className="font-semibold">Чат {i}</p>
-                    <p className="text-sm text-muted-foreground">Последнее сообщение...</p>
-                  </div>
-                  <Badge className="gradient-orange">2</Badge>
-                </div>
-              ))}
+            <CardContent className="py-12 text-center">
+              <div className="text-6xl mb-4">💬</div>
+              <h3 className="text-xl font-semibold mb-2">Нет сообщений</h3>
+              <p className="text-muted-foreground">Начните общение с друзьями!</p>
             </CardContent>
           </Card>
         )}
